@@ -47,14 +47,26 @@ if __name__=='__main__':
     # t1 = re.sub(pattern="([%s])" % (punctuation), repl=r" \1 ", string=test)
     # print(t1)
 
-    train_data_path = os.path.join(RootPath, 'SemanticTextualSimilarity' ,'train.pickle')
+    # train_data_path = os.path.join(RootPath, 'SemanticTextualSimilarity' ,'train.pickle')
+    #
+    # data_dict = pickle.load(open(train_data_path, 'rb'))
+    # sents1 = data_dict['sents1']
+    # sents2 = data_dict['sents2']
+    # labels = data_dict['labels']
+    #
+    # batchs=getbatch(5, sents1, sents2, labels)
+    # for sents1_ids, sents1_lens, sents2_ids, sents2_lens, batch_labels in batchs:
+    #     print('%s %s' % (sents1_lens,sents1_ids))
+    #     print('%s %s' % (sents2_lens,sents2_ids))
 
-    data_dict = pickle.load(open(train_data_path, 'rb'))
-    sents1 = data_dict['sents1']
-    sents2 = data_dict['sents2']
-    labels = data_dict['labels']
+    from gensim.models import KeyedVectors
 
-    batchs=getbatch(5, sents1, sents2, labels)
-    for sents1_ids, sents1_lens, sents2_ids, sents2_lens, batch_labels in batchs:
-        print('%s %s' % (sents1_lens,sents1_ids))
-        print('%s %s' % (sents2_lens,sents2_ids))
+    word2vec_model_path = os.path.join(RootPath, 'GoogleNews-vectors-negative300.bin')
+    word2vec_model = KeyedVectors.load_word2vec_format(word2vec_model_path, binary=True)
+
+    id_list=[431879,636698,1673253]
+    for id in id_list:
+        a=word2vec_model.wv.index2word[id]
+        print(a)
+        print(ord(a))
+

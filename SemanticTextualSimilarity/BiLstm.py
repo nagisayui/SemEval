@@ -2,15 +2,19 @@
 # -*- coding:utf-8 -*-
 
 import os
+import sys
 import re
 import time
 import numpy as np
 import tensorflow as tf
 from string import punctuation
-from word2vec import MyWord2Vec
 from six.moves import cPickle as pickle
 
-RootPath=os.path.join(os.path.dirname(os.path.abspath(__file__)))
+CurrentPath=os.path.join(os.path.dirname(os.path.abspath(__file__)))
+RootPath=os.path.join(CurrentPath,'..')
+sys.path.append(RootPath)
+from word2vec import MyWord2Vec
+
 
 class BiLSTMModel():
     def __init__(self,max_sent_len,word2vec,lstm_num_units,sem_vec_len):
@@ -131,8 +135,8 @@ if __name__=='__main__':
     max_num_undesc=5
     evaluate_every=5
 
-    train_data_path=os.path.join(RootPath,'train.pickle')
-    dev_data_path=os.path.join(RootPath,'dev.pickle')
+    train_data_path=os.path.join(CurrentPath,'train.pickle')
+    dev_data_path=os.path.join(CurrentPath,'dev.pickle')
 
     train_data_dict=pickle.load(open(train_data_path,'rb'))
     train_sents1=train_data_dict['sents1']
@@ -148,7 +152,7 @@ if __name__=='__main__':
     dev_sents2 = split_sents(dev_sents2)
     dev_labels = dev_data_dict['labels']
 
-    test_data_path = os.path.join(RootPath, 'test.pickle')
+    test_data_path = os.path.join(CurrentPath, 'test.pickle')
     test_data_dict = pickle.load(open(test_data_path, 'rb'))
     test_sents1 = test_data_dict['sents1']
     test_sents1 = split_sents(test_sents1)
@@ -182,7 +186,7 @@ if __name__=='__main__':
             train_op=optimizer.apply_gradients(grads_and_vars=grads_and_vars,global_step=global_step)
 
             #output dir : models and summaries
-            out_dir=os.path.join(RootPath,'model')
+            out_dir=os.path.join(CurrentPath,'model')
 
             # summaries for loss and accuracy
             loss_summary=tf.summary.scalar('loss',bilstmmodel.loss)

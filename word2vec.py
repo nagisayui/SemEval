@@ -16,7 +16,8 @@ class MyWord2Vec(object):
         word2vec_dir = Root
         # Load vocab
         with open(os.path.join(word2vec_dir, word2vec_class + '.vocab')) as fr:
-            self.vocab = [line.strip() for line in fr if line.strip()]
+            # self.vocab = [line.strip() for line in fr if line.strip()]
+            self.vocab = [line.strip() for line in fr]
 
         # Load words vector data
         self.words_vec = np.load(os.path.join(word2vec_dir, word2vec_class + '.data.npy'))
@@ -24,8 +25,9 @@ class MyWord2Vec(object):
         # Check data
         assert len(self.vocab) == self.words_vec.shape[0]
 
-
+        print(len(self.vocab))
         self.vocab_dict = {w: i for i, w in enumerate(self.vocab)}
+        print(len(self.vocab_dict))
         # For special symbol
         special_sym_list = ['_NE_', '<S>', '</S>']
         # special_sym_list = []
@@ -34,6 +36,9 @@ class MyWord2Vec(object):
             self.vocab.append(sym)
             self.vocab_dict[sym] = len(self.vocab) - 1
 
+        print(len(self.vocab))
+        print(len(self.vocab_dict))
+        print(self.words_vec.shape[0]-1)
         assert len(self.vocab) == len(self.vocab_dict)
         assert len(self.vocab) == self.words_vec.shape[0] - 1
         # Add default vector for words not listed in vocab
@@ -43,7 +48,8 @@ class MyWord2Vec(object):
 
         # Pattern for number
         self.num_pat = re.compile('^\d+(\.\d+)*$')
-        self.num_sym = '_NUM_'
+        # self.num_sym = '_NUM_'
+        self.num_sym = 'NUMBER'
         assert self.num_sym in self.vocab
 
     def w2id(self, word):
