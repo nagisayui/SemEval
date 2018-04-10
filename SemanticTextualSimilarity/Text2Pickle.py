@@ -84,8 +84,8 @@ def csv2pickle():
     pickle.dump(datadict, write2pickle, protocol=2)
     write2pickle.close()
 
-    b = pickle.load(open('train.pickle', 'rb'))
-    print(b)
+    # b = pickle.load(open('test.pickle', 'rb'))
+    # print(b)
 
 if __name__=='__main__':
     csv2pickle()

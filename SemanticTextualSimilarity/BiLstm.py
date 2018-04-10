@@ -3,8 +3,10 @@
 
 import os
 import re
-from string import punctuation
+import time
+import numpy as np
 import tensorflow as tf
+from string import punctuation
 from word2vec import MyWord2Vec
 from six.moves import cPickle as pickle
 
@@ -78,8 +80,18 @@ class BiLSTMModel():
         #Accuracy
         self.accuracy = tf.reduce_mean(tf.equal(tf.less(tf.abs(tf.subtract(self.pred_score,self.score_labels)))))
 
+# 将英语句子拆分为一个个单词
+def split_sents(sents):
+    s_sents=[]
+    for sent in sents:
+        s = re.sub(pattern="([%s])" % (punctuation), repl=r" \1 ", string=sent)
+        s = s.split()
+        s_sents.append(s)
+    return s_sents
+
+
 # get batch data
-def get_batch(batch_size, sents1, sents2, labels):
+def get_batch(batch_size, sents1,sents1_lens, sents2, sents2_lens,labels):
     batch_sents1 = []
     batch_sents2= []
     batch_labels = []
@@ -118,18 +130,32 @@ if __name__=='__main__':
     max_num_undesc=5
     evaluate_every=5
 
-    train_data_path=os.path.join(RootPath,'eval.pickle')
+    train_data_path=os.path.join(RootPath,'train.pickle')
+    dev_data_path=os.path.join(RootPath,'dev.pickle')
 
-    data_dict=pickle.load(open(train_data_path,'rb'))
-    sents1=data_dict['sents1']
-    sents2=data_dict['sents2']
-    labels=data_dict['labels']
+    train_data_dict=pickle.load(open(train_data_path,'rb'))
+    train_sents1=train_data_dict['sents1']
+    train_sents1 = split_sents(train_sents1)
+    train_sents2=train_data_dict['sents2']
+    train_sents2 = split_sents(train_sents2)
+    train_labels=train_data_dict['labels']
 
-    assert(len(sents1)==len(sents2) and len(sents1)==len(labels))
+    dev_data_dict=pickle.load(open(dev_data_path),'rb')
+    dev_sents1 = dev_data_dict['sents1']
+    dev_sents1 = split_sents(dev_sents1)
+    dev_sents2 = dev_data_dict['sents2']
+    dev_sents2 = split_sents(dev_sents2)
+    dev_labels = dev_data_dict['labels']
+
+    assert(len(train_sents1)==len(train_sents2) and len(train_sents1)==len(train_labels))
 
     myWord2Vec = MyWord2Vec('GoogleNews300')
-    sents1_id_list, sents1_len_list = myWord2Vec.texts2ids(text_list=sents1, sequence_length=max_seq_len, actual_len=True)
-    sents2_id_list, sents2_len_lisr = myWord2Vec.texts2ids(text_list=sents2, sequence_length=max_seq_len, actual_len=True)
+    sents1_id_list, sents1_len_list = myWord2Vec.texts2ids(text_list=train_sents1, sequence_length=max_seq_len, actual_len=True)
+    sents2_id_list, sents2_len_list = myWord2Vec.texts2ids(text_list=train_sents2, sequence_length=max_seq_len, actual_len=True)
+
+    dev_sents1_id_list,dev_sents1_len_list = myWord2Vec.texts2ids(dev_sents1,max_seq_len,actual_len=True)
+    dev_sents2_id_list,dev_sents2_len_list = myWord2Vec.texts2ids(dev_sents2,max_seq_len,actual_len=True)
+
 
     config=tf.ConfigProto()
     config.gpu_options.allow_growth=True
@@ -171,7 +197,7 @@ if __name__=='__main__':
             #Initilize all variables
             sess.run(tf.global_variables_initializer())
 
-            def train_step(summary_writer,sent1_ids,sent1_lens,sent2_ids,sent2_lens,labels,input_keep_prob,output_keep_prob):
+            def one_step(tag,summary_writer,sent1_ids,sent1_lens,sent2_ids,sent2_lens,labels,input_keep_prob,output_keep_prob):
                 feeddict={bilstmmodel.sent1_ids:sent1_ids,
                           bilstmmodel.sent1_lens:sent1_lens,
                           bilstmmodel.sent2_ids:sent2_ids,
@@ -181,12 +207,13 @@ if __name__=='__main__':
                           bilstmmodel.output_keep_prob:output_keep_prob}
 
                 _train_op,_step,summary,loss,accuracy=sess.run([train_op,global_step,summary_writer,bilstmmodel.loss,bilstmmodel.accuracy],feed_dict=feeddict)
-                print('Train:step: %s ,loss: %s ,acc: %s' %(_step,loss,accuracy))
+                print('%s :step: %s ,loss: %s ,acc: %s' %(tag,_step,loss,accuracy))
                 summary_writer.add_summary(summary=summary,global_step=_step)
+                return loss,accuracy
 
             #Start Training
 
-            batches=get_batch(batch_size=batch_size,sents1=sents1_id_list,sents1lens=sents1_lens,sents2=sents2_id_list,sents2lens=sents2_lens)
+            batches=get_batch(batch_size=batch_size,sents1=sents1_id_list,sents1_lens=sents1_len_list,sents2=sents2_id_list,sents2_lens=sents2_len_list)
 
             min_dev_loss = float('inf')
             dev_acc_for_min_loss = 0
@@ -196,18 +223,17 @@ if __name__=='__main__':
                 if num_undesc > max_num_undesc:
                     break
 
-                train_step(train_summary_writer,batch_sents1_ids,batch_sents1_lens,batch_sents2_ids,batch_sents2_lens,batch_labels)
+                one_step('Train',train_summary_writer,batch_sents1_ids,batch_sents1_lens,batch_sents2_ids,batch_sents2_lens,batch_labels)
                 current_step=tf.train.global_step(sess=sess,global_step_tensor=global_step)
 
                 if(current_step%evaluate_every==0):
                     print('\nEvaluation:')
                     dev_loss_list = []
                     dev_acc_list = []
-                    for _, dev_batch in data_helper.iter_batch_2(len(dev_labels) / 20, 1,
-                            dev_ques_ids, dev_ques_lens, dev_prop_ids, dev_prop_lens, dev_labels):
-                        ques_ids_batch, ques_lens_batch, prop_ids_batch, prop_lens_batch, labels_batch = dev_batch
-                        dev_batch_loss, dev_batch_acc = dev_step(
-                            ques_ids_batch, ques_lens_batch, prop_ids_batch, prop_lens_batch, labels_batch)
+                    for dev_batch in get_batch(batch_size=len(dev_labels)/20,sents1=dev_sents1_id_list,sents1_lens=sents1_len_list,sents2=dev_sents2_id_list,sents2_lens=sents2_len_list):
+                        dev_batch_sents1_ids, dev_batch_sents1_lens, dev_batch_sents2_ids,dev_batch_sents2_lens, dev_batch_labels=dev_batch
+                        dev_batch_loss,dev_batch_acc=one_step('Dev',dev_summary_writer,dev_batch_sents1_ids,dev_batch_sents1_lens,dev_batch_sents2_ids,dev_batch_sents2_lens,dev_batch_labels)
+
                         dev_loss_list.append(dev_batch_loss)
                         dev_acc_list.append(dev_batch_acc)
 
@@ -218,14 +244,11 @@ if __name__=='__main__':
                         dev_acc_for_min_loss = dev_acc
                         # Save checkpoints
                         path = saver.save(sess, checkpoint_prefix, global_step=current_step)
-                        print
-                        'Saved model checkpoint to %s' % path
+                        print('Saved model checkpoint to %s' % path)
                         num_undesc = 0
                     else:
                         num_undesc += 1
-                    print
-                    'DEV: loss %g, acc %g\n' % (dev_loss, dev_acc)
+                    print('DEV: loss %s, acc %s\n' % (dev_loss, dev_acc))
                     time.sleep(3)
 
-                print
-                'Minimum dev loss: %g, acc: %g' % (min_dev_loss, dev_acc_for_min_loss)
+                print('Minimum dev loss: %g, acc: %g' % (min_dev_loss, dev_acc_for_min_loss))
