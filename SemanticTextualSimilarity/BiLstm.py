@@ -2,8 +2,10 @@
 # -*- coding:utf-8 -*-
 
 import os
+import re
+from string import punctuation
 import tensorflow as tf
-from gensim.models import word2vec
+from word2vec import MyWord2Vec
 from six.moves import cPickle as pickle
 
 RootPath=os.path.join(os.path.dirname(os.path.abspath(__file__)))
@@ -76,6 +78,30 @@ class BiLSTMModel():
         #Accuracy
         self.accuracy = tf.reduce_mean(tf.equal(tf.less(tf.abs(tf.subtract(self.pred_score,self.score_labels)))))
 
+# get batch data
+def get_batch(batch_size, sents1, sents2, labels):
+    batch_sents1 = []
+    batch_sents2= []
+    batch_labels = []
+
+    for i in range(len(sents1)):
+        t1 = re.sub(pattern="([%s])" % (punctuation), repl=r" \1 ", string=sents1[i])
+        t1 = t1.split()
+        batch_sents1.append(t1)
+
+        t2 = re.sub(pattern="([%s])" % (punctuation), repl=r" \1 ", string=sents2[i])
+        t2 = t2.split()
+        batch_sents2.append(t2)
+
+        batch_labels.append(labels[i])
+        if (len(batch_labels) == batch_size):
+            yield batch_sents1, batch_sents2, batch_labels
+            batch_sents1 = []
+            batch_sents2 = []
+            batch_labels = []
+    else:
+        if (len(batch_labels) > 0):
+            yield batch_sents1, batch_sents2, batch_labels
 
 if __name__=='__main__':
 
@@ -89,59 +115,21 @@ if __name__=='__main__':
     #Train
     batch_size=5
     num_checkpoins=5
+    max_num_undesc=5
+    evaluate_every=5
 
-
-
-
-    word2vec_model_file_path=os.path.join(RootPath,'..','GoogleNews-vectors-negative300.bin')
-    train_data_path=os.path.join(RootPath,'train.pickle')
-
-    word2vec_model=word2vec.KeyedVectors.load_word2vec_format(word2vec_model_file_path,binary=True)
-    print(word2vec_model.vector_size)
-    print('index2word len is %s ,example %s' %(len(word2vec_model.index2word),word2vec_model.index2word[:10]))
-    print('vocab len is %s ,example %s ' %(len(word2vec_model.vocab),word2vec_model.vocab['good']))
-    print('127 is %s , vocab is %s , the item is %s' %(word2vec_model.index2word[127],type(word2vec_model.vocab),type(word2vec_model.vocab['good'])))
-    print('index %s , count %s' %(word2vec_model.vocab['good'].index,word2vec_model.vocab['good'].count))
-    print('word2vec.wv is %s , the len si %s' %(word2vec_model.wv,len(word2vec_model.wv)))
+    train_data_path=os.path.join(RootPath,'eval.pickle')
 
     data_dict=pickle.load(open(train_data_path,'rb'))
     sents1=data_dict['sents1']
     sents2=data_dict['sents2']
     labels=data_dict['labels']
 
-    print('sents1 is %s , sents2 is %s , labels is %s' % (len(sents1),len(sents2),len(labels)))
-
     assert(len(sents1)==len(sents2) and len(sents1)==len(labels))
 
-    def get_batch(batch_size,sents1,sents2,labels):
-        count=0
-        sents1_ids=[]
-        sents1_lens=[]
-        sents2_ids=[]
-        sents2_lens=[]
-        batch_labels=[]
-        for i in range(len(sents1)):
-            t1=sents1[i].split()
-            sents1_ids.append([word2vec_model.vocab[w.strip()].index for w in t1])
-            sents1_lens.append([len(w) for w in t1])
-
-            t2 = sents2[i].split()
-            sents2_ids.append([word2vec_model.vocab[w.strip()].index for w in t2])
-            sents2_lens.append([len(w) for w in t2])
-
-            batch_labels.append(labels[i])
-            count+=1
-            if(count==5):
-                yield sents1_ids,sents1_lens,sents2_ids,sents2_lens,batch_labels
-        else:
-            if(count>0):
-                yield sents1_ids, sents1_lens, sents2_ids, sents2_lens, batch_labels
-
-    results=get_batch(batch_size,sents1,sents2,labels)
-    print(results)
-
-    exit(-1)
-
+    myWord2Vec = MyWord2Vec('GoogleNews300')
+    sents1_id_list, sents1_len_list = myWord2Vec.texts2ids(text_list=sents1, sequence_length=max_seq_len, actual_len=True)
+    sents2_id_list, sents2_len_lisr = myWord2Vec.texts2ids(text_list=sents2, sequence_length=max_seq_len, actual_len=True)
 
     config=tf.ConfigProto()
     config.gpu_options.allow_growth=True
@@ -149,7 +137,7 @@ if __name__=='__main__':
 
     with tf.Graph().as_default():
         with tf.Session(config=config) as sess:
-            bilstmmodel = BiLSTMModel(max_sent_len=max_seq_len,word2vec=word2vec_model.wv, lstm_num_units=lstm_num_units,
+            bilstmmodel = BiLSTMModel(max_sent_len=max_seq_len,word2vec=myWord2Vec.words_vec, lstm_num_units=lstm_num_units,
                                       sem_vec_len=sem_vec_len)
             global_step=tf.Variable(0,trainable=False,name='global_step')
             optimizer=tf.train.AdagradOptimizer(learning_rate=1e-4)
@@ -181,14 +169,13 @@ if __name__=='__main__':
             saver=tf.train.Saver(tf.global_variables(),max_to_keep=num_checkpoins)
 
             #Initilize all variables
-
             sess.run(tf.global_variables_initializer())
 
-            def train_step(summary_writer,sents1_ids,sents1_lens,sents2_ids,sents2_lens,labels,input_keep_prob,output_keep_prob):
-                feeddict={bilstmmodel.sent1_ids:sents1_ids,
-                          bilstmmodel.sent1_lens: sents1_lens,
-                          bilstmmodel.sent2_ids:sents2_ids,
-                          bilstmmodel.sent2_lens:sents2_lens,
+            def train_step(summary_writer,sent1_ids,sent1_lens,sent2_ids,sent2_lens,labels,input_keep_prob,output_keep_prob):
+                feeddict={bilstmmodel.sent1_ids:sent1_ids,
+                          bilstmmodel.sent1_lens:sent1_lens,
+                          bilstmmodel.sent2_ids:sent2_ids,
+                          bilstmmodel.sent2_lens:sent2_lens,
                           bilstmmodel.score_labels:labels,
                           bilstmmodel.input_keep_prob:input_keep_prob,
                           bilstmmodel.output_keep_prob:output_keep_prob}
@@ -197,6 +184,48 @@ if __name__=='__main__':
                 print('Train:step: %s ,loss: %s ,acc: %s' %(_step,loss,accuracy))
                 summary_writer.add_summary(summary=summary,global_step=_step)
 
-
-
             #Start Training
+
+            batches=get_batch(batch_size=batch_size,sents1=sents1_id_list,sents1lens=sents1_lens,sents2=sents2_id_list,sents2lens=sents2_lens)
+
+            min_dev_loss = float('inf')
+            dev_acc_for_min_loss = 0
+            num_undesc = 0
+
+            for batch_sents1_ids,batch_sents1_lens,batch_sents2_ids,batch_sents2_lens,batch_labels in batches:
+                if num_undesc > max_num_undesc:
+                    break
+
+                train_step(train_summary_writer,batch_sents1_ids,batch_sents1_lens,batch_sents2_ids,batch_sents2_lens,batch_labels)
+                current_step=tf.train.global_step(sess=sess,global_step_tensor=global_step)
+
+                if(current_step%evaluate_every==0):
+                    print('\nEvaluation:')
+                    dev_loss_list = []
+                    dev_acc_list = []
+                    for _, dev_batch in data_helper.iter_batch_2(len(dev_labels) / 20, 1,
+                            dev_ques_ids, dev_ques_lens, dev_prop_ids, dev_prop_lens, dev_labels):
+                        ques_ids_batch, ques_lens_batch, prop_ids_batch, prop_lens_batch, labels_batch = dev_batch
+                        dev_batch_loss, dev_batch_acc = dev_step(
+                            ques_ids_batch, ques_lens_batch, prop_ids_batch, prop_lens_batch, labels_batch)
+                        dev_loss_list.append(dev_batch_loss)
+                        dev_acc_list.append(dev_batch_acc)
+
+                    dev_loss = np.mean(dev_loss_list)
+                    dev_acc = np.mean(dev_acc_list)
+                    if dev_loss < min_dev_loss:
+                        min_dev_loss = dev_loss
+                        dev_acc_for_min_loss = dev_acc
+                        # Save checkpoints
+                        path = saver.save(sess, checkpoint_prefix, global_step=current_step)
+                        print
+                        'Saved model checkpoint to %s' % path
+                        num_undesc = 0
+                    else:
+                        num_undesc += 1
+                    print
+                    'DEV: loss %g, acc %g\n' % (dev_loss, dev_acc)
+                    time.sleep(3)
+
+                print
+                'Minimum dev loss: %g, acc: %g' % (min_dev_loss, dev_acc_for_min_loss)

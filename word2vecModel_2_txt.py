@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 #-*- coding:utf-8 -*-
+
 import os
 from gensim.models import Word2Vec
 RootPath=os.path.join(os.path.dirname(os.path.abspath(__file__)))

@@ -5,15 +5,15 @@
 import os, sys, re
 import numpy as np
 
-BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-sys.path.append(BASE_DIR)
-DATA_DIR = os.path.join(BASE_DIR, '..', 'data')
+Root = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(Root)
+
 
 class MyWord2Vec(object):
     def __init__(self, word2vec_class):
         np.random.seed(1234)
 
-        word2vec_dir = os.path.join(DATA_DIR, 'word2vec')
+        word2vec_dir = Root
         # Load vocab
         with open(os.path.join(word2vec_dir, word2vec_class + '.vocab')) as fr:
             self.vocab = [line.strip() for line in fr if line.strip()]
