@@ -78,7 +78,7 @@ class BiLSTMModel():
         self.loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.score_labels,logits=self.pred_score,name='loss')
 
         #Accuracy
-        self.accuracy = tf.reduce_mean(tf.equal(tf.less(tf.abs(tf.subtract(self.pred_score,self.score_labels)))))
+        self.accuracy = tf.reduce_mean(tf.cast(tf.less(tf.abs(tf.subtract(self.pred_score,self.score_labels)),0.1),dtype=tf.float32))
 
 # 将英语句子拆分为一个个单词
 def split_sents(sents):
@@ -93,27 +93,28 @@ def split_sents(sents):
 # get batch data
 def get_batch(batch_size, sents1,sents1_lens, sents2, sents2_lens,labels):
     batch_sents1 = []
+    batch_sents1_lens=[]
     batch_sents2= []
+    batch_sents2_lens=[]
     batch_labels = []
 
     for i in range(len(sents1)):
-        t1 = re.sub(pattern="([%s])" % (punctuation), repl=r" \1 ", string=sents1[i])
-        t1 = t1.split()
-        batch_sents1.append(t1)
-
-        t2 = re.sub(pattern="([%s])" % (punctuation), repl=r" \1 ", string=sents2[i])
-        t2 = t2.split()
-        batch_sents2.append(t2)
-
+        batch_sents1.append(sents1[i])
+        batch_sents1_lens.append(sents1_lens[i])
+        batch_sents2.append(sents2[i])
+        batch_sents2_lens.append(sents2_lens[i])
         batch_labels.append(labels[i])
         if (len(batch_labels) == batch_size):
-            yield batch_sents1, batch_sents2, batch_labels
+            yield batch_sents1,batch_sents1_lens, batch_sents2,batch_sents2_lens, batch_labels
             batch_sents1 = []
+            batch_sents1_lens = []
             batch_sents2 = []
+            batch_sents2_lens = []
             batch_labels = []
     else:
         if (len(batch_labels) > 0):
-            yield batch_sents1, batch_sents2, batch_labels
+            yield batch_sents1,batch_sents1_lens, batch_sents2,batch_sents2_lens, batch_labels
+
 
 if __name__=='__main__':
 
@@ -147,6 +148,14 @@ if __name__=='__main__':
     dev_sents2 = split_sents(dev_sents2)
     dev_labels = dev_data_dict['labels']
 
+    test_data_path = os.path.join(RootPath, 'test.pickle')
+    test_data_dict = pickle.load(open(test_data_path, 'rb'))
+    test_sents1 = test_data_dict['sents1']
+    test_sents1 = split_sents(test_sents1)
+    test_sents2 = test_data_dict['sents2']
+    test_sents2 = split_sents(test_sents2)
+    test_labels = test_data_dict['labels']
+
     assert(len(train_sents1)==len(train_sents2) and len(train_sents1)==len(train_labels))
 
     myWord2Vec = MyWord2Vec('GoogleNews300')
@@ -156,6 +165,8 @@ if __name__=='__main__':
     dev_sents1_id_list,dev_sents1_len_list = myWord2Vec.texts2ids(dev_sents1,max_seq_len,actual_len=True)
     dev_sents2_id_list,dev_sents2_len_list = myWord2Vec.texts2ids(dev_sents2,max_seq_len,actual_len=True)
 
+    test_sents1_ids, test_sents1_lens = myWord2Vec.texts2ids(test_sents1, sequence_length=max_seq_len, actual_len=True)
+    test_sents2_ids, test_sents2_lens = myWord2Vec.texts2ids(test_sents2, sequence_length=max_seq_len, actual_len=True)
 
     config=tf.ConfigProto()
     config.gpu_options.allow_growth=True
@@ -213,7 +224,7 @@ if __name__=='__main__':
 
             #Start Training
 
-            batches=get_batch(batch_size=batch_size,sents1=sents1_id_list,sents1_lens=sents1_len_list,sents2=sents2_id_list,sents2_lens=sents2_len_list)
+            batches=get_batch(batch_size=batch_size,sents1=sents1_id_list,sents1_lens=sents1_len_list,sents2=sents2_id_list,sents2_lens=sents2_len_list,labels=train_labels)
 
             min_dev_loss = float('inf')
             dev_acc_for_min_loss = 0
@@ -223,16 +234,16 @@ if __name__=='__main__':
                 if num_undesc > max_num_undesc:
                     break
 
-                one_step('Train',train_summary_writer,batch_sents1_ids,batch_sents1_lens,batch_sents2_ids,batch_sents2_lens,batch_labels)
+                one_step('Train',train_summary_writer,batch_sents1_ids,batch_sents1_lens,batch_sents2_ids,batch_sents2_lens,batch_labels,input_keep_prob,output_keep_prob)
                 current_step=tf.train.global_step(sess=sess,global_step_tensor=global_step)
 
                 if(current_step%evaluate_every==0):
                     print('\nEvaluation:')
                     dev_loss_list = []
                     dev_acc_list = []
-                    for dev_batch in get_batch(batch_size=len(dev_labels)/20,sents1=dev_sents1_id_list,sents1_lens=sents1_len_list,sents2=dev_sents2_id_list,sents2_lens=sents2_len_list):
+                    for dev_batch in get_batch(batch_size=len(dev_labels)/20,sents1=dev_sents1_id_list,sents1_lens=dev_sents1_len_list,sents2=dev_sents2_id_list,sents2_lens=dev_sents2_len_list,labels=dev_labels):
                         dev_batch_sents1_ids, dev_batch_sents1_lens, dev_batch_sents2_ids,dev_batch_sents2_lens, dev_batch_labels=dev_batch
-                        dev_batch_loss,dev_batch_acc=one_step('Dev',dev_summary_writer,dev_batch_sents1_ids,dev_batch_sents1_lens,dev_batch_sents2_ids,dev_batch_sents2_lens,dev_batch_labels)
+                        dev_batch_loss,dev_batch_acc=one_step('Dev',dev_summary_writer,dev_batch_sents1_ids,dev_batch_sents1_lens,dev_batch_sents2_ids,dev_batch_sents2_lens,dev_batch_labels,input_keep_prob,output_keep_prob)
 
                         dev_loss_list.append(dev_batch_loss)
                         dev_acc_list.append(dev_batch_acc)
@@ -252,3 +263,21 @@ if __name__=='__main__':
                     time.sleep(3)
 
                 print('Minimum dev loss: %g, acc: %g' % (min_dev_loss, dev_acc_for_min_loss))
+
+            #Test
+            test_batchs=get_batch(1,test_sents1_ids,test_sents1_lens,test_sents2_ids,test_sents2_lens,test_labels)
+            right=0
+            fr=open('result.txt','r')
+            for batch_sents1_ids, batch_sents1_lens, batch_sents2_ids, batch_sents2_lens, batch_labels in test_batchs:
+                batch_loss, batch_acc = one_step('Test', dev_summary_writer, batch_sents1_ids,
+                                                         batch_sents1_lens, batch_sents2_ids,
+                                                         batch_sents2_lens, batch_labels,input_keep_prob,output_keep_prob)
+                if(float(batch_acc)==1):
+                    right+=1
+                fr.write('%s\n' % (float(batch_acc)))
+
+
+            print('Total test is %s ,right is %s' % (len(test_labels),right))
+            print('The accuracy is %s ' % (right/len(test_labels)))
+
+
