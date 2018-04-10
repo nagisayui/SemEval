@@ -1,12 +1,11 @@
 #!/usr/bin/env python
-# coding:utf8
+# -*- coding:utf8 -*-
 
 import numpy as np
 import os, sys
 
-
 def word2vec2np(path):
-    fr = open(path, 'r')
+    fr = open(path, 'r',encoding='utf-8')
     # Read basic infomation
     vocab_size, dim = map(int, fr.readline().strip().split())
     # Initialize
@@ -19,11 +18,11 @@ def word2vec2np(path):
             continue
         parts = line.split()
         vocab.append(parts.pop(0))
-        data[i] = map(float, parts)
+        data[i] = list(map(float, parts))
     # Save data
     dname = os.path.dirname(path)
     fname = os.path.basename(path)
-    fname_data = fname.rsplit('.', 1)[0] + '.data'
+    fname_data = fname.rsplit('.', 1)[0] + ".data"
     fname_vocab = fname.rsplit('.', 1)[0] + '.vocab'
     np.save(fname_data, data)
     with open(fname_vocab, 'w') as fp:
@@ -32,7 +31,7 @@ def word2vec2np(path):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print >> sys.stderr, 'Usage: %s input' % sys.argv[0]
+        print('Usage: %s input' % sys.argv[0])
         sys.exit(1)
     word2vec2np(sys.argv[1])
     pass

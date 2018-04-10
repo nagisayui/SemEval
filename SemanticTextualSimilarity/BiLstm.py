@@ -141,7 +141,7 @@ if __name__=='__main__':
     train_sents2 = split_sents(train_sents2)
     train_labels=train_data_dict['labels']
 
-    dev_data_dict=pickle.load(open(dev_data_path),'rb')
+    dev_data_dict=pickle.load(open(dev_data_path,'rb'))
     dev_sents1 = dev_data_dict['sents1']
     dev_sents1 = split_sents(dev_sents1)
     dev_sents2 = dev_data_dict['sents2']
